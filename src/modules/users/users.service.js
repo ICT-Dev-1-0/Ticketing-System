@@ -31,8 +31,8 @@ const getAllUsers = async (query = {}) => {
   const params = [];
 
   if (role) {
-    params.push(role.trim());
-    conditions.push(`role = $${params.length}`);
+    params.push(role.trim().toLowerCase());
+    conditions.push(`LOWER(role) = $${params.length}`);
   }
 
   if (email) {

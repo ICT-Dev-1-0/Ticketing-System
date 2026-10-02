@@ -27,8 +27,8 @@ router.delete("/:id/feedback", authenticate, authorize("admin"), ticketFeedbackC
 
 // Specific action routes
 router.patch("/:id/status", authenticate, authorize("agent", "admin"), ticketsController.updateTicketStatus);
-router.patch("/:id/assign", authenticate, authorize("admin"), ticketsController.assignTicket);
+router.patch("/:id/assign", authenticate, authorize("agent", "admin"), ticketsController.assignTicket);
 router.patch("/:id", authenticate, authorize("agent", "admin"), ticketsController.updateTicket);
-router.delete("/:id", authenticate, authorize("admin"), ticketsController.deleteTicket);
+router.delete("/:id", authenticate, authorize("user", "agent", "admin"), ticketsController.deleteTicket);
 
 module.exports = router;

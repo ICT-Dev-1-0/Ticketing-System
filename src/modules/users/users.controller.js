@@ -94,12 +94,20 @@ const getAllUsers = async (req, res, next) => {
       return getUserbyEmail(req, res, next);
     }
 
-    // Regular users cannot manage or enumerate all users; only staff/agents for display
+    // Regular users cannot manage or enumerate all users; only staff (agents/admins) for ticket assignment display
     if (authUser && authUser.role === "user") {
-      const staffMembers = await usersService.getAllUsers({ role: "agent" });
+      const db = require("../../config/db");
+      const staffQuery = `
+        SELECT id, name, email, role, role_category_id, created_at
+        FROM users
+        WHERE LOWER(role) IN ('agent', 'admin')
+        ORDER BY id ASC
+      `;
+      const staffResult = await db.query(staffQuery);
       return res.json({
         success: true,
-        ...staffMembers,
+        total: staffResult.rows.length,
+        data: staffResult.rows,
       });
     }
 
@@ -202,6 +210,14 @@ const updateUser = async (req, res) => {
       success: false,
       message: "User not found",
     });
+  }
+
+  if (role !== undefined && user.firebase_uid) {
+    const { admin } = require("../../config/firebase");
+    admin
+      .auth()
+      .setCustomUserClaims(user.firebase_uid, { role: normalizeRole(role) })
+      .catch((e) => console.warn("Failed to sync role to Firebase in updateUser:", e.message));
   }
 
   res.json({

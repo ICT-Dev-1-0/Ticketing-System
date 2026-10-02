@@ -13,7 +13,7 @@
 const authorize = (...allowedRoles) => {
   // Normalize allowed roles to lowercase
   const normalizedAllowedRoles = allowedRoles.map((r) =>
-    typeof r === "string" ? r.trim().toLowerCase() : r
+    typeof r === "string" ? r.trim().toLowerCase().replace(/[\s-]+/g, "_") : r
   );
 
   return (req, res, next) => {
@@ -25,7 +25,8 @@ const authorize = (...allowedRoles) => {
       });
     }
 
-    const userRole = (req.user.role || "user").toLowerCase();
+    const rawRole = (req.user.role || "user").toLowerCase().replace(/[\s-]+/g, "_");
+    const userRole = rawRole === "super_admin" ? "admin" : rawRole;
 
     // 2. Check if the verified custom claim role is in allowed roles
     if (!normalizedAllowedRoles.includes(userRole)) {

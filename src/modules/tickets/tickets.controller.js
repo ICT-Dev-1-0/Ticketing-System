@@ -320,10 +320,14 @@ const assignTicket = async (req, res, next) => {
 
 /**
  * DELETE /api/tickets/:id - Delete a ticket
+ * Rules:
+ * - Admin/Agent: Can delete ticket
+ * - User: Can only delete their OWN ticket, AND only until it is assigned (assigned_to is null and status is PENDING/OPEN)
  */
 const deleteTicket = async (req, res, next) => {
   try {
-    const ticket = await ticketsService.deleteTicket(req.params.id);
+    const ticketId = req.params.id;
+    const ticket = await ticketsService.getTicketById(ticketId);
 
     if (!ticket) {
       return res.status(404).json({
@@ -332,10 +336,41 @@ const deleteTicket = async (req, res, next) => {
       });
     }
 
+    // Role-based authorization & assignment validation for regular users
+    if (req.user && req.user.role === "user") {
+      const isOwner =
+        String(ticket.user_id) === String(req.user.uid) ||
+        (req.user.dbId && String(ticket.user_id) === String(req.user.dbId));
+
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: "Forbidden: You do not have permission to delete another user's ticket.",
+        });
+      }
+
+      if (ticket.assigned_to) {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot cancel or delete a ticket once it has been assigned.",
+        });
+      }
+
+      const status = (ticket.status || "").toUpperCase();
+      if (status !== "PENDING" && status !== "OPEN") {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot cancel a ticket that is already in progress or completed.",
+        });
+      }
+    }
+
+    const deletedTicket = await ticketsService.deleteTicket(ticketId);
+
     res.json({
       success: true,
       message: "Ticket deleted successfully",
-      data: ticket,
+      data: deletedTicket,
     });
   } catch (error) {
     next(error);

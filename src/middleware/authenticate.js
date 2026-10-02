@@ -7,9 +7,12 @@ const db = require("../config/db");
  */
 const normalizeRole = (role) => {
   if (!role || typeof role !== "string") return "user";
-  const lower = role.trim().toLowerCase();
-  if (lower === "admin" || lower === "agent" || lower === "user") {
-    return lower;
+  const lower = role.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (lower === "admin" || lower === "super_admin") {
+    return "admin";
+  }
+  if (lower === "agent") {
+    return "agent";
   }
   return "user";
 };
@@ -72,7 +75,7 @@ const authenticate = async (req, res, next) => {
     }
 
     // Determine normalized lowercase role from verified custom claims
-    const verifiedRole = normalizeRole(decodedToken.role);
+    let verifiedRole = normalizeRole(decodedToken.role);
 
     // Attach verified user identity to req.user
     req.user = {
@@ -104,12 +107,38 @@ const authenticate = async (req, res, next) => {
             "UPDATE users SET firebase_uid = $1 WHERE id = $2",
             [decodedToken.uid, dbUserRes.rows[0].id]
           );
+        } else {
+          // Auto-provision user record in PostgreSQL if missing
+          const insertRes = await db.query(
+            "INSERT INTO users (name, email, role, firebase_uid) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role, role_category_id",
+            [
+              decodedToken.name || decodedToken.email.split("@")[0],
+              decodedToken.email,
+              verifiedRole,
+              decodedToken.uid,
+            ]
+          );
+          dbUserRes = insertRes;
         }
       }
 
       if (dbUserRes.rows.length > 0) {
-        req.user.dbId = dbUserRes.rows[0].id;
-        req.user.dbUser = dbUserRes.rows[0];
+        const dbUser = dbUserRes.rows[0];
+        req.user.dbId = dbUser.id;
+        req.user.dbUser = dbUser;
+
+        const dbRole = normalizeRole(dbUser.role);
+        // If Firebase custom claim was missing or default "user", but DB has an assigned role (admin/agent):
+        if (!decodedToken.role || (decodedToken.role === "user" && dbRole !== "user")) {
+          req.user.role = dbRole;
+          // Synchronize to Firebase custom claims asynchronously
+          admin
+            .auth()
+            .setCustomUserClaims(decodedToken.uid, { role: dbRole })
+            .catch((err) => {
+              console.warn("Auto-syncing custom claims to Firebase warning:", err.message);
+            });
+        }
       }
     } catch (dbErr) {
       console.error("User DB lookup warning in auth middleware:", dbErr.message);
